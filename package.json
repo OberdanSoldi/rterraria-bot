@@ -6,7 +6,6 @@
     "@types/bun": "latest"
   },
   "scripts": {
-    "prestart": "bun run db.js",
     "dev": "bun --watch index.js",
     "start": "bun --env-file=.env run index.js",
     "generate": "bun run db.js"
