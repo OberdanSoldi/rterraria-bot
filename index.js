@@ -4,15 +4,15 @@ import axios from 'axios';
 import sharp from "sharp";
 import { Bot } from '@skyware/bot';
 import { v4 as uuidv4 } from 'uuid';
-import {getRandomPost, insertPost, markPostAsPosted} from "./functions.js";
-import {CronJob} from "cron";
+import { getRandomPost, insertPost, markPostAsPosted, initializeDatabase } from "./functions.js";
+import { CronJob } from "cron";
 
 const config = {
 	jpeg: { quality: 60 },
 	webp: { quality: 60 },
 	png: { compressionLevel: 2 },
 	jpg: { quality: 60 },
-}
+};
 
 async function getRedditPost() {
 	try {
@@ -36,7 +36,7 @@ async function getRedditPost() {
 				'upgrade-insecure-requests': '1',
 				'user-agent':
 					'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
-			}
+			},
 		});
 
 		const posts = response.data.data.children
@@ -44,22 +44,14 @@ async function getRedditPost() {
 				title: post.data?.title,
 				link: `redd.it/${post.data?.id}`,
 				id: post.data?.id,
-				preview: post.data?.url
+				preview: post.data?.url,
 			}))
-			.filter((post) => !post.preview.includes("gallery"))
-			.filter((post) => Object.keys(config).includes(post.preview.split('.').pop()))
+			.filter((post) => !post.preview.includes('gallery'))
+			.filter((post) => Object.keys(config).includes(post.preview.split('.').pop()));
 
-		if (posts.length === 0) {
-			return null;
-		}
-
-		if (posts.length === 1) {
-			return posts[0];
-		}
-
-		return posts
+		return posts.length ? posts : null;
 	} catch (error) {
-		console.error('error on fetching reddit posts', error);
+		console.error('Error fetching reddit posts', error);
 		throw error;
 	}
 }
@@ -67,20 +59,19 @@ async function getRedditPost() {
 async function downloadImage(imageUrl) {
 	try {
 		const response = await axios.get(imageUrl, {
-			responseType: 'arraybuffer'
+			responseType: 'arraybuffer',
 		});
 
 		const imageName = uuidv4();
 		const imageExtension = imageUrl.split('.').pop();
-
 		const buffer = Buffer.from(response.data);
-		const imgPath = path.join(__dirname, 'img', `${imageName}.${imageExtension}`);
 
+		const imgPath = path.join(__dirname, 'img', `${imageName}.${imageExtension}`);
 		fs.writeFileSync(imgPath, buffer);
 
 		return imgPath;
 	} catch (error) {
-		console.error('error on downloading image', error);
+		console.error('Error downloading image', error);
 		throw error;
 	}
 }
@@ -90,9 +81,9 @@ function removeImages(imagePaths) {
 		imagePaths.forEach((image) => {
 			fs.unlinkSync(image);
 		});
-		console.log('removed images', imagePaths);
+		console.log('Removed images', imagePaths);
 	} catch (error) {
-		console.error('error on removing original image', error);
+		console.error('Error removing images', error);
 		throw error;
 	}
 }
@@ -111,9 +102,12 @@ async function compressImage(imagePath) {
 			await image[format](config[format]).resize({ height: 600 }).toFile(compressedImagePath);
 		}
 
+		// Destruir imagem original para liberar memória
+		image.destroy();
+
 		return compressedImagePath;
 	} catch (error) {
-		console.error('error on compressing image', error);
+		console.error('Error compressing image', error);
 		throw error;
 	}
 }
@@ -122,7 +116,6 @@ function getBlob(imagePath) {
 	try {
 		const imageBuffer = fs.readFileSync(imagePath);
 		const imageFormat = imagePath.split('.').pop();
-		console.log("image format", imageFormat)
 		return new Blob([imageBuffer], { type: `image/${imageFormat}` });
 	} catch (error) {
 		console.error('Error reading image file:', error);
@@ -132,30 +125,27 @@ function getBlob(imagePath) {
 
 async function postOnBluesky() {
 	try {
-		const bot = new Bot()
+		const bot = new Bot();
 		await bot.login({
 			identifier: process.env.IDENTIFIER,
-			password: process.env.PASSWORD
-		})
+			password: process.env.PASSWORD,
+		});
 
 		const post = getRandomPost();
 		const imagePath = await downloadImage(post.preview);
 		const compressedImagePath = await compressImage(imagePath);
 
-		console.log('post', post)
+		console.log('Post:', post);
 
 		await bot.post({
 			text: `${post.title} ${post.link}`,
-			images: [{
-				data: getBlob(compressedImagePath),
-			}]
-		})
+			images: [{ data: getBlob(compressedImagePath) }],
+		});
 
 		removeImages([imagePath, compressedImagePath]);
 		markPostAsPosted(post.id);
-
 	} catch (error) {
-		console.error('error on posting on bluesky', error);
+		console.error('Error posting on Bluesky', error);
 		throw error;
 	}
 }
@@ -165,31 +155,27 @@ async function populateDb() {
 		const posts = await getRedditPost();
 
 		if (!posts) {
-			console.log('no posts to insert');
+			console.log('No posts to insert');
 			return;
 		}
 
-		const isPostsArray = Array.isArray(posts);
-
-		if (isPostsArray) {
-			posts.forEach((post) => {
-				insertPost(post);
-			});
-		} else {
-			insertPost(posts);
-		}
+		posts.forEach((post) => {
+			insertPost(post);
+		});
 	} catch (error) {
-		console.error('error on populating db', error);
+		console.error('Error populating database', error);
 	}
 }
 
-const job = CronJob.from({
-	cronTime: '0 * * * *',
-	onTick: async () => {
+initializeDatabase(); // Iniciar a instância do banco de dados
+
+const job = new CronJob('0 * * * *', async () => {
+	try {
 		await populateDb();
 		await postOnBluesky();
-	},
-	timeZone: 'America/Sao_Paulo'
-});
+	} catch (error) {
+		console.error('Error during cron job execution', error);
+	}
+}, null, true, 'America/Sao_Paulo');
 
 job.start();

@@ -1,4 +1,4 @@
-import {Database} from "bun:sqlite";
+import { Database } from "bun:sqlite";
 
 export function getRandomPost() {
     using db = new Database("db.sqlite");
@@ -28,6 +28,5 @@ export function insertPost(post) {
         INSERT OR IGNORE INTO posts (id, posted, link, preview, title)
         VALUES (?, ?, ?, ?, ?)
     `);
-
     query.run(post.id, false, post.link, post.preview, post.title);
 }
