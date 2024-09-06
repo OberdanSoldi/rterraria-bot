@@ -1,23 +1,20 @@
-import {Database} from "bun:sqlite";
-
-let db;
-
-export function initializeDatabase() {
-    db = new Database("db.sqlite");
-}
+import { Database } from "bun:sqlite";
 
 export function getRandomPost() {
-    const query = db.query("SELECT * FROM posts WHERE posted = 0 ORDER BY RANDOM() LIMIT 1");
+    using db = new Database("db.sqlite");
+    using query = db.query("SELECT * FROM posts WHERE posted = 0 ORDER BY RANDOM() LIMIT 1");
     return query.get();
 }
 
 export function getPosts() {
-    const query = db.query("SELECT * FROM posts");
+    using db = new Database("db.sqlite");
+    using query = db.query("SELECT * FROM posts");
     return query.all();
 }
 
 export function markPostAsPosted(postId) {
-    const query = db.query(`
+    using db = new Database("db.sqlite");
+    using query = db.query(`
         UPDATE posts
         SET posted = 1
         WHERE id = ?
@@ -26,7 +23,8 @@ export function markPostAsPosted(postId) {
 }
 
 export function insertPost(post) {
-    const query = db.query(`
+    using db = new Database("db.sqlite");
+    using query = db.query(`
         INSERT OR IGNORE INTO posts (id, posted, link, preview, title)
         VALUES (?, ?, ?, ?, ?)
     `);
