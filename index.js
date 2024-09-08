@@ -111,6 +111,8 @@ async function compressImage(imagePath) {
 			await image[format](config[format]).resize({ height: 600 }).toFile(compressedImagePath);
 		}
 
+		image.destroy();
+
 		return compressedImagePath;
 	} catch (error) {
 		console.error('error on compressing image', error);
